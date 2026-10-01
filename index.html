@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unsere Fotos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f2f5f1;
+    --ink: #16231f;
+    --muted: #5d6d66;
+    --accent: #1f6f5c;
+    --accent-ink: #ffffff;
+    --line: #d3dbd5;
+    --card: #ffffff;
+    --err: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 18px 64px; }
+  h1 { font-size: clamp(2.2rem, 7vw, 4rem); line-height: 1; margin: 0 0 10px; font-weight: 800; letter-spacing: -0.03em; }
+  .lead { color: var(--muted); max-width: 46ch; margin: 0 0 26px; font-size: 1.05rem; }
+
+  .upload {
+    background: var(--card); border: 2px dashed var(--line); border-radius: 14px;
+    padding: 22px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+    transition: border-color .15s, background .15s;
+  }
+  .upload.drag { border-color: var(--accent); background: #e8f2ee; }
+  .btn {
+    appearance: none; border: 0; background: var(--accent); color: var(--accent-ink);
+    font: inherit; font-weight: 700; padding: 13px 22px; border-radius: 10px; cursor: pointer;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:focus-visible, .thumb:focus-visible, .lb button:focus-visible, .lb a:focus-visible {
+    outline: 3px solid #f0b429; outline-offset: 2px;
+  }
+  .hint { color: var(--muted); font-size: .95rem; }
+
+  #queue { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; }
+  #queue li { display: flex; justify-content: space-between; gap: 12px; font-size: .92rem; padding: 8px 12px; background: var(--card); border-radius: 8px; border: 1px solid var(--line); }
+  #queue .ok { color: var(--accent); font-weight: 700; }
+  #queue .fail { color: var(--err); font-weight: 700; }
+
+  .bar { display: flex; justify-content: space-between; align-items: baseline; margin: 38px 0 14px; }
+  .bar h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
+  .count { color: var(--muted); }
+
+  #grid { columns: 3 220px; column-gap: 10px; }
+  .thumb {
+    display: block; width: 100%; margin: 0 0 10px; padding: 0; border: 0; cursor: zoom-in;
+    background: var(--line); border-radius: 8px; overflow: hidden; break-inside: avoid;
+  }
+  .thumb img { display: block; width: 100%; height: auto; }
+  .empty { color: var(--muted); padding: 30px 0; }
+
+  .lb { position: fixed; inset: 0; background: rgba(10,18,15,.94); display: none; align-items: center; justify-content: center; z-index: 10; }
+  .lb.open { display: flex; }
+  .lb img { max-width: 94vw; max-height: 84vh; border-radius: 4px; }
+  .lb button, .lb a {
+    position: absolute; background: rgba(255,255,255,.14); color: #fff; border: 0; border-radius: 10px;
+    font: inherit; font-weight: 700; padding: 10px 16px; cursor: pointer; text-decoration: none;
+  }
+  .lb .close { top: 14px; right: 14px; }
+  .lb .dl { bottom: 14px; left: 50%; transform: translateX(-50%); }
+  .lb .prev { left: 10px; top: 50%; }
+  .lb .next { right: 10px; top: 50%; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1 id="title">Unsere Fotos</h1>
+  <p class="lead" id="lead">Lade deine Fotos vom Event hoch und schau dir an, was die anderen aufgenommen haben.</p>
+
+  <section class="upload" id="drop">
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <button class="btn" id="pick" type="button">Fotos auswählen</button>
+    <span class="hint">Du kannst mehrere Fotos auf einmal hochladen. Gelöscht werden kann hier nichts.</span>
+  </section>
+  <ul id="queue" aria-live="polite"></ul>
+
+  <div class="bar">
+    <h2>Galerie</h2>
+    <span class="count" id="count"></span>
+  </div>
+  <div id="grid"></div>
+  <p class="empty" id="empty" hidden>Noch keine Fotos. Lade das erste hoch!</p>
+</main>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Foto ansehen">
+  <button class="close" id="lbClose" type="button">Schließen</button>
+  <button class="prev" id="lbPrev" type="button" aria-label="Voriges Foto">‹</button>
+  <img id="lbImg" alt="">
+  <button class="next" id="lbNext" type="button" aria-label="Nächstes Foto">›</button>
+  <a class="dl" id="lbDl" target="_blank" rel="noopener">Original herunterladen</a>
+</div>
+
+<script>
+// ====== EINSTELLUNGEN ======
+const API_URL = "HIER_DIE_WEB_APP_URL_EINTRAGEN"; // URL aus dem Apps-Script-Deployment
+const TITLE   = "Unsere Fotos";                    // z. B. "Hochzeit Anna & Ben"
+const LEAD    = "Lade deine Fotos vom Event hoch und schau dir an, was die anderen aufgenommen haben.";
+const MAX_SIDE = 2560;   // Fotos werden vor dem Upload auf diese Kantenlänge verkleinert
+const QUALITY  = 0.9;
+// ===========================
+
+document.title = TITLE;
+document.getElementById("title").textContent = TITLE;
+document.getElementById("lead").textContent = LEAD;
+
+const $ = id => document.getElementById(id);
+const thumbUrl = (id, w) => `https://drive.google.com/thumbnail?id=${id}&sz=w${w}`;
+let photos = [];
+let current = -1;
+
+// ---------- Galerie ----------
+async function loadGallery() {
+  try {
+    const res = await fetch(API_URL);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    if (data.files.length === photos.length && data.files.every((f, i) => f.id === photos[i].id)) return;
+    photos = data.files;
+    render();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function render() {
+  const grid = $("grid");
+  grid.textContent = "";
+  photos.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.className = "thumb"; b.type = "button";
+    b.setAttribute("aria-label", `Foto ${i + 1} öffnen`);
+    const img = document.createElement("img");
+    img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 600);
+    b.appendChild(img);
+    b.addEventListener("click", () => openLb(i));
+    grid.appendChild(b);
+  });
+  $("empty").hidden = photos.length > 0;
+  $("count").textContent = photos.length ? `${photos.length} Foto${photos.length === 1 ? "" : "s"}` : "";
+}
+
+// ---------- Lightbox ----------
+function openLb(i) {
+  current = (i + photos.length) % photos.length;
+  const p = photos[current];
+  $("lbImg").src = thumbUrl(p.id, 1800);
+  $("lbDl").href = `https://drive.google.com/uc?export=download&id=${p.id}`;
+  $("lb").classList.add("open");
+  $("lbClose").focus();
+}
+function closeLb() { $("lb").classList.remove("open"); $("lbImg").src = ""; }
+$("lbClose").onclick = closeLb;
+$("lbPrev").onclick = () => openLb(current - 1);
+$("lbNext").onclick = () => openLb(current + 1);
+$("lb").addEventListener("click", e => { if (e.target === $("lb")) closeLb(); });
+document.addEventListener("keydown", e => {
+  if (!$("lb").classList.contains("open")) return;
+  if (e.key === "Escape") closeLb();
+  if (e.key === "ArrowLeft") openLb(current - 1);
+  if (e.key === "ArrowRight") openLb(current + 1);
+});
+
+// ---------- Upload ----------
+async function shrink(file) {
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(r => c.toBlob(r, "image/jpeg", QUALITY));
+    return { blob, mime: "image/jpeg" };
+  } catch {
+    return { blob: file, mime: file.type || "image/jpeg" }; // Fallback: Original
+  }
+}
+
+function toBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function uploadFiles(files) {
+  const list = [...files].filter(f => f.type.startsWith("image/"));
+  for (const file of list) {
+    const li = document.createElement("li");
+    const name = document.createElement("span"); name.textContent = file.name;
+    const state = document.createElement("span"); state.textContent = "Wird hochgeladen …";
+    li.append(name, state);
+    $("queue").prepend(li);
+    try {
+      const { blob, mime } = await shrink(file);
+      const data = await toBase64(blob);
+      // Kein Content-Type-Header setzen (text/plain), so gibt es keinen CORS-Preflight
+      const res = await fetch(API_URL, {
+        method: "POST",
+        body: JSON.stringify({ name: file.name, mimeType: mime, data })
+      });
+      const out = await res.json();
+      if (!out.ok) throw new Error(out.error);
+      state.textContent = "Fertig"; state.className = "ok";
+    } catch (e) {
+      state.textContent = "Fehlgeschlagen – bitte nochmal versuchen"; state.className = "fail";
+      console.error(e);
+    }
+  }
+  loadGallery();
+}
+
+$("pick").onclick = () => $("file").click();
+$("file").onchange = e => { uploadFiles(e.target.files); e.target.value = ""; };
+const drop = $("drop");
+["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("drag"); }));
+["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("drag"); }));
+drop.addEventListener("drop", e => uploadFiles(e.dataTransfer.files));
+
+loadGallery();
+setInterval(loadGallery, 30000); // neue Fotos automatisch nachladen
+</script>
+</body>
+</html>
