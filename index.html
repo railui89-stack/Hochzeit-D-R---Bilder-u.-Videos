@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Unsere Fotos</title>
+<title>Unsere Fotos &amp; Videos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,700;12..96,800&display=swap" rel="stylesheet">
@@ -61,6 +61,14 @@
   }
   .thumb img { display: block; width: 100%; height: auto; }
   .empty { color: var(--muted); padding: 30px 0; }
+  .thumb.video { position: relative; min-height: 120px; aspect-ratio: 16 / 9; }
+  .thumb.video img { height: 100%; object-fit: cover; }
+  .thumb.video::after {
+    content: "▶"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
+    display: grid; place-items: center; font-size: 18px; padding-left: 3px;
+  }
+  .lb iframe { width: min(94vw, 1100px); height: 78vh; border: 0; border-radius: 4px; background: #000; display: none; }
 
   .lb { position: fixed; inset: 0; background: rgba(10,18,15,.94); display: none; align-items: center; justify-content: center; z-index: 10; }
   .lb.open { display: flex; }
@@ -82,9 +90,9 @@
   <p class="lead" id="lead">Lade deine Fotos vom Event hoch und schau dir an, was die anderen aufgenommen haben.</p>
 
   <section class="upload" id="drop">
-    <input type="file" id="file" accept="image/*" multiple hidden>
-    <button class="btn" id="pick" type="button">Fotos auswählen</button>
-    <span class="hint">Du kannst mehrere Fotos auf einmal hochladen. Gelöscht werden kann hier nichts.</span>
+    <input type="file" id="file" accept="image/*,video/*" multiple hidden>
+    <button class="btn" id="pick" type="button">Fotos & Videos auswählen</button>
+    <span class="hint">Du kannst mehrere Dateien auf einmal hochladen. Gelöscht werden kann hier nichts.</span>
   </section>
   <ul id="queue" aria-live="polite"></ul>
 
@@ -93,24 +101,26 @@
     <span class="count" id="count"></span>
   </div>
   <div id="grid"></div>
-  <p class="empty" id="empty" hidden>Noch keine Fotos. Lade das erste hoch!</p>
+  <p class="empty" id="empty" hidden>Noch nichts da. Lade das erste Foto oder Video hoch!</p>
 </main>
 
 <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Foto ansehen">
   <button class="close" id="lbClose" type="button">Schließen</button>
   <button class="prev" id="lbPrev" type="button" aria-label="Voriges Foto">‹</button>
   <img id="lbImg" alt="">
+  <iframe id="lbVid" allow="autoplay; fullscreen" allowfullscreen title="Video"></iframe>
   <button class="next" id="lbNext" type="button" aria-label="Nächstes Foto">›</button>
   <a class="dl" id="lbDl" target="_blank" rel="noopener">Original herunterladen</a>
 </div>
 
 <script>
 // ====== EINSTELLUNGEN ======
-const API_URL = "https://script.google.com/macros/s/AKfycbzNIKOvhiolh0n4upGXnaUXqtMG4owMMv5ejkzkcAc5R3cXWijcS_XJhCPZYTelUiYIwQ/exec"; // URL aus dem Apps-Script-Deployment
-const TITLE   = "Hochzeit D & R - Bilder u. Videos";                    // z. B. "Hochzeit Anna & Ben"
-const LEAD    = "Lade deine Fotos vom Event hoch und schau dir an, was die anderen aufgenommen haben.";
+const API_URL = "HIER_DIE_WEB_APP_URL_EINTRAGEN"; // URL aus dem Apps-Script-Deployment
+const TITLE   = "Unsere Fotos & Videos";                    // z. B. "Hochzeit Anna & Ben"
+const LEAD    = "Lade deine Fotos und Videos vom Event hoch und schau dir an, was die anderen aufgenommen haben.";
 const MAX_SIDE = 2560;   // Fotos werden vor dem Upload auf diese Kantenlänge verkleinert
 const QUALITY  = 0.9;
+const MAX_VIDEO_MB = 1000; // größere Videos werden abgelehnt
 // ===========================
 
 document.title = TITLE;
@@ -141,8 +151,8 @@ function render() {
   grid.textContent = "";
   photos.forEach((p, i) => {
     const b = document.createElement("button");
-    b.className = "thumb"; b.type = "button";
-    b.setAttribute("aria-label", `Foto ${i + 1} öffnen`);
+    b.className = "thumb" + (p.v ? " video" : ""); b.type = "button";
+    b.setAttribute("aria-label", `${p.v ? "Video" : "Foto"} ${i + 1} öffnen`);
     const img = document.createElement("img");
     img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 600);
     b.appendChild(img);
@@ -150,19 +160,27 @@ function render() {
     grid.appendChild(b);
   });
   $("empty").hidden = photos.length > 0;
-  $("count").textContent = photos.length ? `${photos.length} Foto${photos.length === 1 ? "" : "s"}` : "";
+  $("count").textContent = photos.length ? `${photos.length} Datei${photos.length === 1 ? "" : "en"}` : "";
 }
 
 // ---------- Lightbox ----------
 function openLb(i) {
   current = (i + photos.length) % photos.length;
   const p = photos[current];
-  $("lbImg").src = thumbUrl(p.id, 1800);
+  if (p.v) {
+    $("lbImg").style.display = "none"; $("lbImg").src = "";
+    $("lbVid").style.display = "block";
+    $("lbVid").src = `https://drive.google.com/file/d/${p.id}/preview`;
+  } else {
+    $("lbVid").style.display = "none"; $("lbVid").src = "";
+    $("lbImg").style.display = "block";
+    $("lbImg").src = thumbUrl(p.id, 1800);
+  }
   $("lbDl").href = `https://drive.google.com/uc?export=download&id=${p.id}`;
   $("lb").classList.add("open");
   $("lbClose").focus();
 }
-function closeLb() { $("lb").classList.remove("open"); $("lbImg").src = ""; }
+function closeLb() { $("lb").classList.remove("open"); $("lbImg").src = ""; $("lbVid").src = ""; }
 $("lbClose").onclick = closeLb;
 $("lbPrev").onclick = () => openLb(current - 1);
 $("lbNext").onclick = () => openLb(current + 1);
@@ -199,8 +217,29 @@ function toBase64(blob) {
   });
 }
 
+// Video: Upload-Adresse beim Script holen, Datei dann direkt zu Google Drive senden
+async function uploadVideo(file, onProgress) {
+  if (file.size > MAX_VIDEO_MB * 1024 * 1024) throw new Error("Video zu groß");
+  const mime = file.type || "video/mp4";
+  const res = await fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({ action: "start", mimeType: mime, size: file.size })
+  });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error);
+  await new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", out.url);
+    x.setRequestHeader("Content-Type", mime);
+    x.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    x.onload = () => (x.status >= 200 && x.status < 300) ? resolve() : reject(new Error("Status " + x.status));
+    x.onerror = () => reject(new Error("Netzwerkfehler"));
+    x.send(file);
+  });
+}
+
 async function uploadFiles(files) {
-  const list = [...files].filter(f => f.type.startsWith("image/"));
+  const list = [...files].filter(f => f.type.startsWith("image/") || f.type.startsWith("video/"));
   for (const file of list) {
     const li = document.createElement("li");
     const name = document.createElement("span"); name.textContent = file.name;
@@ -208,6 +247,11 @@ async function uploadFiles(files) {
     li.append(name, state);
     $("queue").prepend(li);
     try {
+      if (file.type.startsWith("video/")) {
+        await uploadVideo(file, pct => { state.textContent = `Wird hochgeladen … ${pct} %`; });
+        state.textContent = "Fertig (Vorschau kann einige Minuten dauern)"; state.className = "ok";
+        continue;
+      }
       const { blob, mime } = await shrink(file);
       const data = await toBase64(blob);
       // Kein Content-Type-Header setzen (text/plain), so gibt es keinen CORS-Preflight
