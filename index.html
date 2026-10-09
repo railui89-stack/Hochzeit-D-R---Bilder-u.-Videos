@@ -54,9 +54,9 @@
   .bar h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
   .count { color: var(--muted); }
 
-  #grid { columns: 3 220px; column-gap: 10px; }
+  #grid { columns: 5 160px; column-gap: 6px; }
   .thumb {
-    display: block; width: 100%; margin: 0 0 10px; padding: 0; border: 0; cursor: zoom-in;
+    display: block; width: 100%; margin: 0 0 6px; padding: 0; border: 0; cursor: zoom-in;
     background: var(--line); border-radius: 8px; overflow: hidden; break-inside: avoid;
   }
   .thumb img { display: block; width: 100%; height: auto; }
@@ -154,7 +154,7 @@ function render() {
     b.className = "thumb" + (p.v ? " video" : ""); b.type = "button";
     b.setAttribute("aria-label", `${p.v ? "Video" : "Foto"} ${i + 1} öffnen`);
     const img = document.createElement("img");
-    img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 600);
+    img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 400);
     b.appendChild(img);
     b.addEventListener("click", () => openLb(i));
     grid.appendChild(b);
