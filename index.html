@@ -213,19 +213,34 @@ async function uploadImageViaScript(file) {
   if (!out.ok) throw new Error(out.error);
 }
 
-// Foto/Video im Original: Upload-Adresse beim Script holen, Datei dann direkt zu Google Drive senden
-async function uploadMedia(file, onProgress) {
-  const isVideo = file.type.startsWith("video/");
-  if (file.size > (isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error("Datei zu groß");
-  const mime = file.type;
+// Foto/Video im Original hochladen.
+// 1) Schnell: direkt zu Google Drive.  2) Falls das nicht klappt: stückweise über das Script.
+let directBroken = false;
+
+async function startSession(file) {
   const res = await fetch(API_URL, {
     method: "POST",
-    body: JSON.stringify({ action: "start", mimeType: mime, size: file.size })
+    body: JSON.stringify({ action: "start", mimeType: file.type, size: file.size })
   });
   const out = await res.json();
   if (!out.ok) throw new Error(out.error);
-  // Datei in 8-MB-Stücken über das Script an Drive weitergeben
-  const CHUNK = 8 * 1024 * 1024; // muss ein Vielfaches von 256 KB sein
+  return out.url;
+}
+
+function uploadDirect(file, url, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("PUT", url);
+    x.setRequestHeader("Content-Type", file.type);
+    x.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    x.onload = () => (x.status >= 200 && x.status < 300) ? resolve() : reject(new Error("Status " + x.status));
+    x.onerror = () => reject(new Error("Direktupload nicht möglich"));
+    x.send(file);
+  });
+}
+
+async function uploadChunked(file, url, onProgress) {
+  const CHUNK = 16 * 1024 * 1024; // muss ein Vielfaches von 256 KB sein
   for (let start = 0; start < file.size; start += CHUNK) {
     const end = Math.min(start + CHUNK, file.size);
     const data = await toBase64(file.slice(start, end));
@@ -234,7 +249,7 @@ async function uploadMedia(file, onProgress) {
       try {
         const r = await fetch(API_URL, {
           method: "POST",
-          body: JSON.stringify({ action: "chunk", url: out.url, start, end, total: file.size, mimeType: mime, data })
+          body: JSON.stringify({ action: "chunk", url, start, end, total: file.size, mimeType: file.type, data })
         });
         const o = await r.json();
         if (!o.ok) throw new Error(o.error);
@@ -247,6 +262,22 @@ async function uploadMedia(file, onProgress) {
     if (!ok) throw lastErr;
     onProgress(Math.round(end / file.size * 100));
   }
+}
+
+async function uploadMedia(file, onProgress) {
+  const isVideo = file.type.startsWith("video/");
+  if (file.size > (isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error("Datei zu groß");
+  if (!directBroken) {
+    try {
+      await uploadDirect(file, await startSession(file), onProgress);
+      return;
+    } catch (e) {
+      console.warn("Direktupload fehlgeschlagen, wechsle auf Upload über das Script:", e);
+      directBroken = true;
+    }
+  }
+  onProgress(0);
+  await uploadChunked(file, await startSession(file), onProgress);
 }
 
 async function uploadFiles(files) {
