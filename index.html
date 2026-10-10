@@ -54,19 +54,19 @@
   .bar h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }
   .count { color: var(--muted); }
 
-  #grid { columns: 5 160px; column-gap: 6px; }
+  #grid { columns: 8 80px; column-gap: 4px; }
   .thumb {
-    display: block; width: 100%; margin: 0 0 6px; padding: 0; border: 0; cursor: zoom-in;
+    display: block; width: 100%; margin: 0 0 4px; padding: 0; border: 0; cursor: zoom-in;
     background: var(--line); border-radius: 8px; overflow: hidden; break-inside: avoid;
   }
   .thumb img { display: block; width: 100%; height: auto; }
   .empty { color: var(--muted); padding: 30px 0; }
-  .thumb.video { position: relative; min-height: 120px; aspect-ratio: 16 / 9; }
+  .thumb.video { position: relative; min-height: 50px; aspect-ratio: 16 / 9; }
   .thumb.video img { height: 100%; object-fit: cover; }
   .thumb.video::after {
     content: "▶"; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
-    display: grid; place-items: center; font-size: 18px; padding-left: 3px;
+    width: 28px; height: 28px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff;
+    display: grid; place-items: center; font-size: 12px; padding-left: 2px;
   }
   .lb iframe { width: min(94vw, 1100px); height: 78vh; border: 0; border-radius: 4px; background: #000; display: none; }
 
@@ -118,9 +118,8 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbzNIKOvhiolh0n4upGXnaUXqtMG4owMMv5ejkzkcAc5R3cXWijcS_XJhCPZYTelUiYIwQ/exec"; // URL aus dem Apps-Script-Deployment
 const TITLE   = "Unsere Fotos & Videos";                    // z. B. "Hochzeit Anna & Ben"
 const LEAD    = "Lade deine Fotos und Videos vom Event hoch und schau dir an, was die anderen aufgenommen haben.";
-const MAX_SIDE = 2560;   // Fotos werden vor dem Upload auf diese Kantenlänge verkleinert
-const QUALITY  = 0.9;
 const MAX_VIDEO_MB = 3000; // größere Videos werden abgelehnt
+const MAX_IMAGE_MB = 200;  // größere Fotos werden abgelehnt
 // ===========================
 
 document.title = TITLE;
@@ -154,7 +153,7 @@ function render() {
     b.className = "thumb" + (p.v ? " video" : ""); b.type = "button";
     b.setAttribute("aria-label", `${p.v ? "Video" : "Foto"} ${i + 1} öffnen`);
     const img = document.createElement("img");
-    img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 400);
+    img.loading = "lazy"; img.alt = ""; img.src = thumbUrl(p.id, 300);
     b.appendChild(img);
     b.addEventListener("click", () => openLb(i));
     grid.appendChild(b);
@@ -193,34 +192,11 @@ document.addEventListener("keydown", e => {
 });
 
 // ---------- Upload ----------
-async function shrink(file) {
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(bmp.width * scale);
-    c.height = Math.round(bmp.height * scale);
-    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
-    const blob = await new Promise(r => c.toBlob(r, "image/jpeg", QUALITY));
-    return { blob, mime: "image/jpeg" };
-  } catch {
-    return { blob: file, mime: file.type || "image/jpeg" }; // Fallback: Original
-  }
-}
-
-function toBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result.split(",")[1]);
-    r.onerror = reject;
-    r.readAsDataURL(blob);
-  });
-}
-
-// Video: Upload-Adresse beim Script holen, Datei dann direkt zu Google Drive senden
-async function uploadVideo(file, onProgress) {
-  if (file.size > MAX_VIDEO_MB * 1024 * 1024) throw new Error("Video zu groß");
-  const mime = file.type || "video/mp4";
+// Foto/Video im Original: Upload-Adresse beim Script holen, Datei dann direkt zu Google Drive senden
+async function uploadMedia(file, onProgress) {
+  const isVideo = file.type.startsWith("video/");
+  if (file.size > (isVideo ? MAX_VIDEO_MB : MAX_IMAGE_MB) * 1024 * 1024) throw new Error("Datei zu groß");
+  const mime = file.type;
   const res = await fetch(API_URL, {
     method: "POST",
     body: JSON.stringify({ action: "start", mimeType: mime, size: file.size })
@@ -247,20 +223,7 @@ async function uploadFiles(files) {
     li.append(name, state);
     $("queue").prepend(li);
     try {
-      if (file.type.startsWith("video/")) {
-        await uploadVideo(file, pct => { state.textContent = `Wird hochgeladen … ${pct} %`; });
-        state.textContent = "Fertig (Vorschau kann einige Minuten dauern)"; state.className = "ok";
-        continue;
-      }
-      const { blob, mime } = await shrink(file);
-      const data = await toBase64(blob);
-      // Kein Content-Type-Header setzen (text/plain), so gibt es keinen CORS-Preflight
-      const res = await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({ name: file.name, mimeType: mime, data })
-      });
-      const out = await res.json();
-      if (!out.ok) throw new Error(out.error);
+      await uploadMedia(file, pct => { state.textContent = `Wird hochgeladen … ${pct} %`; });
       state.textContent = "Fertig"; state.className = "ok";
     } catch (e) {
       state.textContent = "Fehlgeschlagen – bitte nochmal versuchen"; state.className = "fail";
