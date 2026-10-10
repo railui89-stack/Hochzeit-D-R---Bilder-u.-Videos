@@ -120,6 +120,7 @@ const TITLE   = "Unsere Fotos & Videos";                    // z. B. "Hochzeit A
 const LEAD    = "Lade deine Fotos und Videos vom Event hoch und schau dir an, was die anderen aufgenommen haben.";
 const MAX_VIDEO_MB = 3000; // größere Videos werden abgelehnt
 const MAX_IMAGE_MB = 200;  // größere Fotos werden abgelehnt
+const IMAGE_VIA_SCRIPT_MB = 25; // Fotos bis zu dieser Größe laufen über das Script (sehr zuverlässig)
 // ===========================
 
 document.title = TITLE;
@@ -192,6 +193,26 @@ document.addEventListener("keydown", e => {
 });
 
 // ---------- Upload ----------
+// Foto im Original über das Apps Script (Base64) – ohne Verkleinerung
+function toBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(",")[1]);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+async function uploadImageViaScript(file) {
+  const data = await toBase64(file);
+  // Kein Content-Type-Header setzen (text/plain), so gibt es keinen CORS-Preflight
+  const res = await fetch(API_URL, {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, mimeType: file.type, data })
+  });
+  const out = await res.json();
+  if (!out.ok) throw new Error(out.error);
+}
+
 // Foto/Video im Original: Upload-Adresse beim Script holen, Datei dann direkt zu Google Drive senden
 async function uploadMedia(file, onProgress) {
   const isVideo = file.type.startsWith("video/");
@@ -223,7 +244,11 @@ async function uploadFiles(files) {
     li.append(name, state);
     $("queue").prepend(li);
     try {
-      await uploadMedia(file, pct => { state.textContent = `Wird hochgeladen … ${pct} %`; });
+      if (file.type.startsWith("image/") && file.size <= IMAGE_VIA_SCRIPT_MB * 1024 * 1024) {
+        await uploadImageViaScript(file);
+      } else {
+        await uploadMedia(file, pct => { state.textContent = `Wird hochgeladen … ${pct} %`; });
+      }
       state.textContent = "Fertig"; state.className = "ok";
     } catch (e) {
       state.textContent = "Fehlgeschlagen – bitte nochmal versuchen"; state.className = "fail";
