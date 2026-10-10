@@ -265,7 +265,7 @@ async function uploadFiles(files) {
       }
       state.textContent = "Fertig"; state.className = "ok";
     } catch (e) {
-      state.textContent = "Fehlgeschlagen – bitte nochmal versuchen"; state.className = "fail";
+      state.textContent = "Fehlgeschlagen: " + (e && e.message ? e.message : e); state.className = "fail";
       console.error(e);
     }
   }
